@@ -18,7 +18,6 @@ module-sets:
     modules:
       - go.opentelemetry.io/proto
       - go.opentelemetry.io/proto/otlp
-      - go.opentelemetry.io/proto/otlphttp
       - go.opentelemetry.io/proto/slim/otlp
   unstable:
     version: v0.4.0
@@ -26,12 +25,9 @@ module-sets:
       - go.opentelemetry.io/proto/otlp/processcontext/v1development
       - go.opentelemetry.io/proto/otlp/profiles/v1development
       - go.opentelemetry.io/proto/otlp/collector/profiles/v1development
-      - go.opentelemetry.io/proto/otlphttp/processcontext/v1development
-      - go.opentelemetry.io/proto/otlphttp/profiles/v1development
-      - go.opentelemetry.io/proto/otlphttp/collector/profiles/v1development
       - go.opentelemetry.io/proto/slim/otlp/processcontext/v1development
       - go.opentelemetry.io/proto/slim/otlp/profiles/v1development
       - go.opentelemetry.io/proto/slim/otlp/collector/profiles/v1development
 excluded-modules:
   - go.opentelemetry.io/proto/internal/tools
-  - go.opentelemetry.io/proto/internal/otlphttptest
+  - go.opentelemetry.io/proto/internal/slimotlpcompat

@@ -44,30 +44,36 @@ import (
 )
 ```
 
-### OTLP over HTTP
+### Slim OTLP
 
-The `go.opentelemetry.io/proto/otlphttp` module provides the same OTLP message
+The `go.opentelemetry.io/proto/slim/otlp` module provides the same OTLP message
 API without generated gRPC or gRPC-Gateway code. It is intended for clients
-that send OTLP protobuf messages over HTTP:
+that send OTLP protobuf messages over HTTP or otherwise do not need the
+generated gRPC services:
 
 ```sh
-go get go.opentelemetry.io/proto/otlphttp@latest
+go get go.opentelemetry.io/proto/slim/otlp@latest
 ```
 
 ```go
 import (
-	coltracepb "go.opentelemetry.io/proto/otlphttp/collector/trace/v1"
-	tracepb "go.opentelemetry.io/proto/otlphttp/trace/v1"
+	coltracepb "go.opentelemetry.io/proto/slim/otlp/collector/trace/v1"
+	tracepb "go.opentelemetry.io/proto/slim/otlp/trace/v1"
 )
 ```
 
 The module is generated from the same OTLP schemas and preserves their field
 numbers and wire types. Its protobuf full names and source descriptor paths
-use a distinct `opentelemetry.proto.otlphttp` namespace, allowing these
+use a distinct `opentelemetry.proto.slim` namespace, allowing these
 packages to coexist in one process with the canonical `otlp` packages without
 conflicting in the global protobuf registry. The resulting Go message types
 are distinct from the canonical module's types even though their serialized
-OTLP payloads are wire-compatible.
+core OTLP protobuf and JSON payloads are compatible.
+
+The descriptor identity differs from both the canonical module and earlier
+`slim/otlp` releases. Code that depends on protobuf reflection names, service
+full names, registry lookups, or `google.protobuf.Any` type URLs needs to
+account for the `opentelemetry.proto.slim` namespace.
 
 ### Compatibility
 
