@@ -54,6 +54,11 @@ PROTOSLIM_SOURCE_DIR   := $(GEN_TEMP_DIR)/slim/proto
 SOURCE_PROTOSLIM_FILES := $(subst $(OTEL_PROTO_SUBMODULE),$(PROTOSLIM_SOURCE_DIR),$(SUBMODULE_PROTO_FILES))
 OTLPSLIM_OUTPUT_DIR    := slim/otlp
 
+PROTOHTTP_SOURCE_DIR   := $(GEN_TEMP_DIR)/otlphttp/proto
+PROTOHTTP_SOURCE_PREFIX := opentelemetry/proto/otlphttp
+SOURCE_PROTOHTTP_FILES := $(patsubst $(OTEL_PROTO_SUBMODULE)/opentelemetry/proto/%.proto,$(PROTOHTTP_SOURCE_DIR)/$(PROTOHTTP_SOURCE_PREFIX)/%.proto,$(SUBMODULE_PROTO_FILES))
+OTLPHTTP_OUTPUT_DIR    := otlphttp
+
 # Function to execute a command. Note the empty line before endef to make sure each command
 # gets executed separately instead of concatenated with previous one.
 # Accepts command to execute as first parameter.
@@ -67,6 +72,7 @@ OTEL_DOCKER_PROTOBUF := $(shell awk '$$4=="build-protobuf" {print $$2}' $(DEPEND
 
 PROTOC := docker run --rm -u ${shell id -u} -v${PWD}:${PWD} -w${PWD} ${OTEL_DOCKER_PROTOBUF} --proto_path="$(PROTO_SOURCE_DIR)"
 PROTOC_SLIM := docker run --rm -u ${shell id -u} -v${PWD}:${PWD} -w${PWD} ${OTEL_DOCKER_PROTOBUF} --proto_path="$(PROTOSLIM_SOURCE_DIR)"
+PROTOC_HTTP := docker run --rm -u ${shell id -u} -v${PWD}:${PWD} -w${PWD} ${OTEL_DOCKER_PROTOBUF} --proto_path="$(PROTOHTTP_SOURCE_DIR)"
 
 .DEFAULT_GOAL := protobuf
 
@@ -87,7 +93,7 @@ $(TOOLS)/multimod: PACKAGE=go.opentelemetry.io/build-tools/multimod
 tools: $(MULTIMOD)
 
 .PHONY: protobuf
-protobuf: protobuf-source gen-otlp-protobuf copy-otlp-protobuf gen-otlp-protobuf-slim copy-otlp-protobuf-slim
+protobuf: protobuf-source gen-otlp-protobuf copy-otlp-protobuf gen-otlp-protobuf-slim copy-otlp-protobuf-slim gen-otlphttp-protobuf copy-otlphttp-protobuf
 
 .PHONY: protobuf-source
 protobuf-source: $(SOURCE_PROTO_FILES)
@@ -116,6 +122,24 @@ $(PROTOSLIM_SOURCE_DIR)/%.proto: $(OTEL_PROTO_SUBMODULE)/%.proto
 	@ \
 	mkdir -p $(@D); \
 	sed -e $(SED_EXPR_SLIM) "$<" >"$@.tmp"; \
+	mv "$@.tmp" "$@"
+
+# These expressions give the OTLP/HTTP copy distinct Go import paths,
+# protobuf full names, and source descriptor paths. The generated messages
+# remain wire-compatible with the canonical OTLP messages because their field
+# numbers and wire types are unchanged.
+SED_EXPR_HTTP_GO_PACKAGE := 's,go_package = "go.opentelemetry.io/proto/otlp/,go_package = "$(GO_MOD_ROOT)/$(OTLPHTTP_OUTPUT_DIR)/,'
+SED_EXPR_HTTP_IMPORT := 's,"opentelemetry/proto/,"$(PROTOHTTP_SOURCE_PREFIX)/,g'
+SED_EXPR_HTTP_PROTO_PACKAGE := 's,\([[:space:]]\)opentelemetry\.proto\.,\1opentelemetry.proto.otlphttp.,g'
+
+$(PROTOHTTP_SOURCE_DIR)/$(PROTOHTTP_SOURCE_PREFIX)/%.proto: $(OTEL_PROTO_SUBMODULE)/opentelemetry/proto/%.proto
+	@ \
+	mkdir -p $(@D); \
+	sed \
+		-e $(SED_EXPR_HTTP_GO_PACKAGE) \
+		-e $(SED_EXPR_HTTP_IMPORT) \
+		-e $(SED_EXPR_HTTP_PROTO_PACKAGE) \
+		"$<" >"$@.tmp"; \
 	mv "$@.tmp" "$@"
 
 .PHONY: gen-otlp-protobuf
@@ -149,6 +173,20 @@ copy-otlp-protobuf-slim:
 	@git restore $$(git ls-files --deleted | grep -E 'go\.(mod|sum)$$')
 	cd ./$(OTLPSLIM_OUTPUT_DIR)	&& go mod tidy
 
+.PHONY: gen-otlphttp-protobuf
+gen-otlphttp-protobuf: $(SOURCE_PROTOHTTP_FILES)
+	rm -rf ./$(PROTOBUF_TEMP_DIR)
+	mkdir -p ./$(PROTOBUF_TEMP_DIR)
+	$(foreach file,$(SOURCE_PROTOHTTP_FILES),$(call exec-command,$(PROTOC_HTTP) $(PROTO_INCLUDES) --go_out=./$(PROTOBUF_TEMP_DIR) $(file)))
+
+.PHONY: copy-otlphttp-protobuf
+copy-otlphttp-protobuf:
+	rm -rf $(OTLPHTTP_OUTPUT_DIR)/*/
+	@rsync -a $(PROTOBUF_TEMP_DIR)/go.opentelemetry.io/proto/otlphttp/ ./$(OTLPHTTP_OUTPUT_DIR)
+	@deleted_otlphttp_mod_files="$$(git ls-files --deleted '$(OTLPHTTP_OUTPUT_DIR)/**/go.mod' '$(OTLPHTTP_OUTPUT_DIR)/**/go.sum')"; \
+	if [ -n "$${deleted_otlphttp_mod_files}" ]; then git restore $${deleted_otlphttp_mod_files}; fi
+	cd ./$(OTLPHTTP_OUTPUT_DIR) && go mod tidy
+
 .PHONY: toolchain-check
 toolchain-check:
 	@toolchainRes=$$(for f in $(ALL_GO_MOD_DIRS); do \
@@ -166,7 +204,7 @@ clean-gen:
 .PHONY: clean
 clean:
 	rm -rf $(GEN_TEMP_DIR)
-	rm -rf $(OTLP_OUTPUT_DIR)/*/ $(OTLPSLIM_OUTPUT_DIR)/*/
+	rm -rf $(OTLP_OUTPUT_DIR)/*/ $(OTLPSLIM_OUTPUT_DIR)/*/ $(OTLPHTTP_OUTPUT_DIR)/*/
 
 .PHONY: go-mod-tidy
 go-mod-tidy: clean-gen $(ALL_GO_MOD_DIRS:%=go-mod-tidy/%)
