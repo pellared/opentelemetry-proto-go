@@ -123,9 +123,10 @@ type ProfilesDictionary struct {
 	// impractically increasing the profile size.
 	//
 	// Examples of attributes:
-	//     "/http/user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
-	//     "abc.com/myattribute": true
-	//     "allocation_size": 128 bytes
+	//
+	//	"/http/user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
+	//	"abc.com/myattribute": true
+	//	"allocation_size": 128 bytes
 	//
 	// attribute_table[0] MUST be the zero value (KeyValueAndUnit{}) and present.
 	AttributeTable []*KeyValueAndUnit `protobuf:"bytes,6,rep,name=attribute_table,json=attributeTable,proto3" json:"attribute_table,omitempty"`
@@ -445,9 +446,12 @@ type Profile struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The type and unit of all Sample.values in this profile.
 	// For a cpu or off-cpu profile this might be:
-	//   ["cpu","nanoseconds"] or ["off_cpu","nanoseconds"]
+	//
+	//	["cpu","nanoseconds"] or ["off_cpu","nanoseconds"]
+	//
 	// For a heap profile, this might be:
-	//   ["allocated_objects","count"] or ["allocated_space","bytes"],
+	//
+	//	["allocated_objects","count"] or ["allocated_space","bytes"],
 	SampleType *ValueType `protobuf:"bytes,1,opt,name=sample_type,json=sampleType,proto3" json:"sample_type,omitempty"`
 	// The set of samples recorded in this profile.
 	Samples []*Sample `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples,omitempty"`
@@ -462,17 +466,17 @@ type Profile struct {
 	// The type and the unit of the events between sampled occurrences for
 	// periodic sampling profiles. It can be the same as sample_type or it can be
 	// different depending on the case, for example:
-	// - sample_type=(cpu, milliseconds), period_type=(cpu, milliseconds),
-	//   period=10 signals that we sample the program every 10 milliseconds and
-	//   capture samples that each represent that sampling distance.
-	// - sample_type=(off_cpu, nanoseconds), period_type=(context_switch, count),
-	//   period=1000 describes a profile where sampling is done every so often in
-	//   terms of context switches, but the recorded metric is the time spent by
-	//   the thread off CPU.
-	// - sample_type=(inuse_space, bytes), period_type=(allocated_bytes, bytes),
-	//   period=262144 might represent a heap profile where the recorded sample
-	//   metric is the size of the live heap while the periodic sampling is done
-	//   using the number of cumulatively allocated bytes.
+	//   - sample_type=(cpu, milliseconds), period_type=(cpu, milliseconds),
+	//     period=10 signals that we sample the program every 10 milliseconds and
+	//     capture samples that each represent that sampling distance.
+	//   - sample_type=(off_cpu, nanoseconds), period_type=(context_switch, count),
+	//     period=1000 describes a profile where sampling is done every so often in
+	//     terms of context switches, but the recorded metric is the time spent by
+	//     the thread off CPU.
+	//   - sample_type=(inuse_space, bytes), period_type=(allocated_bytes, bytes),
+	//     period=262144 might represent a heap profile where the recorded sample
+	//     metric is the size of the live heap while the periodic sampling is done
+	//     using the number of cumulatively allocated bytes.
 	PeriodType *ValueType `protobuf:"bytes,5,opt,name=period_type,json=periodType,proto3" json:"period_type,omitempty"`
 	// The distance between sampled occurrences for periodic sampling profiles.
 	// The value is of the period_type type and unit.
@@ -1009,8 +1013,9 @@ type Location struct {
 	// preceding entries were inlined.
 	//
 	// E.g., if memcpy() is inlined into printf:
-	//    lines[0].function_name == "memcpy"
-	//    lines[1].function_name == "printf"
+	//
+	//	lines[0].function_name == "memcpy"
+	//	lines[1].function_name == "printf"
 	Lines []*Line `protobuf:"bytes,3,rep,name=lines,proto3" json:"lines,omitempty"`
 	// References to attributes in ProfilesDictionary.attribute_table. [optional]
 	AttributeIndices []int32 `protobuf:"varint,4,rep,packed,name=attribute_indices,json=attributeIndices,proto3" json:"attribute_indices,omitempty"`

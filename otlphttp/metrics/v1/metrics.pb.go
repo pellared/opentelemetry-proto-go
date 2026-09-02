@@ -57,18 +57,18 @@ const (
 	// it receives and reports the sum of these requests every second as a
 	// DELTA metric:
 	//
-	//   1. The system starts receiving at time=t_0.
-	//   2. A request is received, the system measures 1 request.
-	//   3. A request is received, the system measures 1 request.
-	//   4. A request is received, the system measures 1 request.
-	//   5. The 1 second collection cycle ends. A metric is exported for the
-	//      number of requests received over the interval of time t_0 to
-	//      t_0+1 with a value of 3.
-	//   6. A request is received, the system measures 1 request.
-	//   7. A request is received, the system measures 1 request.
-	//   8. The 1 second collection cycle ends. A metric is exported for the
-	//      number of requests received over the interval of time t_0+1 to
-	//      t_0+2 with a value of 2.
+	//  1. The system starts receiving at time=t_0.
+	//  2. A request is received, the system measures 1 request.
+	//  3. A request is received, the system measures 1 request.
+	//  4. A request is received, the system measures 1 request.
+	//  5. The 1 second collection cycle ends. A metric is exported for the
+	//     number of requests received over the interval of time t_0 to
+	//     t_0+1 with a value of 3.
+	//  6. A request is received, the system measures 1 request.
+	//  7. A request is received, the system measures 1 request.
+	//  8. The 1 second collection cycle ends. A metric is exported for the
+	//     number of requests received over the interval of time t_0+1 to
+	//     t_0+2 with a value of 2.
 	AggregationTemporality_AGGREGATION_TEMPORALITY_DELTA AggregationTemporality = 1
 	// CUMULATIVE is an AggregationTemporality for a metric aggregator which
 	// reports changes since a fixed start time. This means that current values
@@ -82,24 +82,24 @@ const (
 	// it receives and reports the sum of these requests every second as a
 	// CUMULATIVE metric:
 	//
-	//   1. The system starts receiving at time=t_0.
-	//   2. A request is received, the system measures 1 request.
-	//   3. A request is received, the system measures 1 request.
-	//   4. A request is received, the system measures 1 request.
-	//   5. The 1 second collection cycle ends. A metric is exported for the
-	//      number of requests received over the interval of time t_0 to
-	//      t_0+1 with a value of 3.
-	//   6. A request is received, the system measures 1 request.
-	//   7. A request is received, the system measures 1 request.
-	//   8. The 1 second collection cycle ends. A metric is exported for the
-	//      number of requests received over the interval of time t_0 to
-	//      t_0+2 with a value of 5.
-	//   9. The system experiences a fault and loses state.
-	//   10. The system recovers and resumes receiving at time=t_1.
-	//   11. A request is received, the system measures 1 request.
-	//   12. The 1 second collection cycle ends. A metric is exported for the
-	//      number of requests received over the interval of time t_1 to
-	//      t_0+1 with a value of 1.
+	//  1. The system starts receiving at time=t_0.
+	//  2. A request is received, the system measures 1 request.
+	//  3. A request is received, the system measures 1 request.
+	//  4. A request is received, the system measures 1 request.
+	//  5. The 1 second collection cycle ends. A metric is exported for the
+	//     number of requests received over the interval of time t_0 to
+	//     t_0+1 with a value of 3.
+	//  6. A request is received, the system measures 1 request.
+	//  7. A request is received, the system measures 1 request.
+	//  8. The 1 second collection cycle ends. A metric is exported for the
+	//     number of requests received over the interval of time t_0 to
+	//     t_0+2 with a value of 5.
+	//  9. The system experiences a fault and loses state.
+	//  10. The system recovers and resumes receiving at time=t_1.
+	//  11. A request is received, the system measures 1 request.
+	//  12. The 1 second collection cycle ends. A metric is exported for the
+	//     number of requests received over the interval of time t_1 to
+	//     t_0+1 with a value of 1.
 	//
 	// Note: Even though, when reporting changes since last report time, using
 	// CUMULATIVE is valid, it is not recommended. This may cause problems for
@@ -1357,7 +1357,7 @@ type ExponentialHistogramDataPoint struct {
 	// scale describes the resolution of the histogram.  Boundaries are
 	// located at powers of the base, where:
 	//
-	//   base = (2^(2^-scale))
+	//	base = (2^(2^-scale))
 	//
 	// The histogram bucket identified by `index`, a signed integer,
 	// contains values that are greater than (base^index) and
