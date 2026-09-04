@@ -20,6 +20,10 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+// These module-local tests intentionally cover only the stable slim module.
+// Cross-module compatibility, including development profiles and process context,
+// is covered by ../../internal/slimotlpcompat/compatibility_test.go.
+
 func TestStableFileDescriptorNamespace(t *testing.T) {
 	tests := []struct {
 		descriptor protoreflect.FileDescriptor
@@ -48,7 +52,7 @@ func TestStableFileDescriptorNamespace(t *testing.T) {
 	}
 }
 
-func TestCollectorRequestWireFormat(t *testing.T) {
+func TestStableCollectorRequestEncodings(t *testing.T) {
 	const schemaURL = "schema"
 	// Field 1 is the repeated resource message in every OTLP export request.
 	// Field 3 in each resource message is schema_url. This is the canonical OTLP
