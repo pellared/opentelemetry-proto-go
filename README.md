@@ -46,10 +46,10 @@ import (
 
 ### Slim OTLP
 
-The `go.opentelemetry.io/proto/slim/otlp` module provides the same OTLP message
-API without generated gRPC or gRPC-Gateway code. It is intended for clients
-that send OTLP protobuf messages over HTTP or otherwise do not need the
-generated gRPC services:
+The `go.opentelemetry.io/proto/slim/otlp` module provides corresponding OTLP Go
+message structs and fields without generated gRPC or gRPC-Gateway code. It is
+intended for clients that send OTLP protobuf messages over HTTP or otherwise do
+not need the generated gRPC services:
 
 ```sh
 go get go.opentelemetry.io/proto/slim/otlp@latest
@@ -74,6 +74,11 @@ The descriptor identity differs from both the canonical module and earlier
 `slim/otlp` releases. Code that depends on protobuf reflection names, service
 full names, registry lookups, or `google.protobuf.Any` type URLs needs to
 account for the `opentelemetry.proto.slim` namespace.
+
+Applications using the separate slim profiles or process-context development
+modules must upgrade them to descriptor-distinct releases at the same time.
+Older versions of those modules still register the canonical descriptor
+identities.
 
 ### Compatibility
 

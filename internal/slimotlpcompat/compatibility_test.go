@@ -50,6 +50,8 @@ const (
 	slimPathPrefix      = "opentelemetry/proto/slim/"
 	canonicalNamePrefix = "opentelemetry.proto."
 	slimNamePrefix      = "opentelemetry.proto.slim."
+	canonicalGoPrefix   = "go.opentelemetry.io/proto/otlp"
+	slimGoPrefix        = "go.opentelemetry.io/proto/slim/otlp"
 )
 
 type filePair struct {
@@ -93,6 +95,7 @@ func TestCanonicalAndSlimDescriptorsCoexist(t *testing.T) {
 			assertRegisteredFile(t, files.canonical)
 			assertRegisteredFile(t, files.slim)
 			assertSlimFileNamespace(t, files.slim)
+			assertCompatibleFileShape(t, files.canonical, files.slim)
 		})
 	}
 }
@@ -226,7 +229,6 @@ func TestEveryTopLevelMessageHasCompatibleEncoding(t *testing.T) {
 
 			tested++
 			t.Run(string(canonicalDescriptor.FullName()), func(t *testing.T) {
-				assertCompatibleMessageShape(t, canonicalDescriptor, slimDescriptor)
 				canonical := newRepresentativeMessage(canonicalDescriptor)
 				slim := newRepresentativeMessage(slimDescriptor)
 				assertCompatibleEncoding(t, canonical, slim)
@@ -239,42 +241,85 @@ func TestEveryTopLevelMessageHasCompatibleEncoding(t *testing.T) {
 	}
 }
 
-func assertCompatibleMessageShape(t *testing.T, canonical, slim protoreflect.MessageDescriptor) {
+func assertCompatibleFileShape(t *testing.T, canonical, slim protoreflect.FileDescriptor) {
 	t.Helper()
 
-	canonicalProto := protodesc.ToDescriptorProto(canonical)
-	slimProto := protodesc.ToDescriptorProto(slim)
-	canonicalizeSlimTypeNames(slimProto)
+	canonicalProto := protodesc.ToFileDescriptorProto(canonical)
+	slimProto := protodesc.ToFileDescriptorProto(slim)
+	wantSlimGoPackage := strings.Replace(
+		canonicalProto.GetOptions().GetGoPackage(),
+		canonicalGoPrefix,
+		slimGoPrefix,
+		1,
+	)
+	if got := slimProto.GetOptions().GetGoPackage(); got != wantSlimGoPackage {
+		t.Errorf("slim Go package = %q, want %q", got, wantSlimGoPackage)
+	}
+
+	canonicalizeSlimFileDescriptor(slimProto)
 	if !proto.Equal(slimProto, canonicalProto) {
 		t.Errorf(
-			"message descriptor mismatch for %s:\ncanonical:\n%s\nslim:\n%s",
-			canonical.FullName(),
+			"file descriptor mismatch for %s:\ncanonical:\n%s\nslim:\n%s",
+			canonical.Path(),
 			prototext.Format(canonicalProto),
 			prototext.Format(slimProto),
 		)
 	}
 }
 
-func canonicalizeSlimTypeNames(message *descriptorpb.DescriptorProto) {
-	canonicalize := func(field *descriptorpb.FieldDescriptorProto) {
-		if field.TypeName != nil {
-			name := strings.Replace(field.GetTypeName(), "."+slimNamePrefix, "."+canonicalNamePrefix, 1)
-			field.TypeName = &name
-		}
-		if field.Extendee != nil {
-			name := strings.Replace(field.GetExtendee(), "."+slimNamePrefix, "."+canonicalNamePrefix, 1)
-			field.Extendee = &name
+func canonicalizeSlimFileDescriptor(file *descriptorpb.FileDescriptorProto) {
+	name := strings.Replace(file.GetName(), slimPathPrefix, canonicalPathPrefix, 1)
+	file.Name = &name
+	packageName := strings.Replace(file.GetPackage(), slimNamePrefix, canonicalNamePrefix, 1)
+	file.Package = &packageName
+	for i, dependency := range file.Dependency {
+		file.Dependency[i] = strings.Replace(dependency, slimPathPrefix, canonicalPathPrefix, 1)
+	}
+	if options := file.Options; options != nil && options.GoPackage != nil {
+		goPackage := strings.Replace(options.GetGoPackage(), slimGoPrefix, canonicalGoPrefix, 1)
+		options.GoPackage = &goPackage
+	}
+	for _, message := range file.MessageType {
+		canonicalizeSlimTypeNames(message)
+	}
+	for _, extension := range file.Extension {
+		canonicalizeSlimField(extension)
+	}
+	for _, service := range file.Service {
+		for _, method := range service.Method {
+			inputType := canonicalizeSlimTypeName(method.GetInputType())
+			method.InputType = &inputType
+			outputType := canonicalizeSlimTypeName(method.GetOutputType())
+			method.OutputType = &outputType
 		}
 	}
+}
+
+func canonicalizeSlimTypeNames(message *descriptorpb.DescriptorProto) {
 	for _, field := range message.Field {
-		canonicalize(field)
+		canonicalizeSlimField(field)
 	}
 	for _, field := range message.Extension {
-		canonicalize(field)
+		canonicalizeSlimField(field)
 	}
 	for _, nested := range message.NestedType {
 		canonicalizeSlimTypeNames(nested)
 	}
+}
+
+func canonicalizeSlimField(field *descriptorpb.FieldDescriptorProto) {
+	if field.TypeName != nil {
+		name := canonicalizeSlimTypeName(field.GetTypeName())
+		field.TypeName = &name
+	}
+	if field.Extendee != nil {
+		name := canonicalizeSlimTypeName(field.GetExtendee())
+		field.Extendee = &name
+	}
+}
+
+func canonicalizeSlimTypeName(name string) string {
+	return strings.Replace(name, "."+slimNamePrefix, "."+canonicalNamePrefix, 1)
 }
 
 func newRepresentativeMessage(descriptor protoreflect.MessageDescriptor) proto.Message {
@@ -484,7 +529,11 @@ func assertSlimFileNamespace(t *testing.T, file protoreflect.FileDescriptor) {
 
 	extensions := file.Extensions()
 	for i := 0; i < extensions.Len(); i++ {
-		checkDescriptor(extensions.Get(i))
+		extension := extensions.Get(i)
+		checkDescriptor(extension)
+		assertSlimReference(t, extension.ContainingMessage())
+		assertSlimReference(t, extension.Message())
+		assertSlimReference(t, extension.Enum())
 	}
 
 	services := file.Services()
