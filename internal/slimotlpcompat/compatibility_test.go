@@ -5,6 +5,10 @@ package slimotlpcompat
 
 import (
 	"bytes"
+	"encoding/json"
+	"io/fs"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -31,9 +35,13 @@ import (
 	slimresource "go.opentelemetry.io/proto/slim/otlp/resource/v1"
 	slimtrace "go.opentelemetry.io/proto/slim/otlp/trace/v1"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/dynamicpb"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
@@ -89,7 +97,50 @@ func TestCanonicalAndSlimDescriptorsCoexist(t *testing.T) {
 	}
 }
 
-func TestCanonicalAndSlimMessagesHaveCompatibleEncoding(t *testing.T) {
+func TestAllProtoFilesHaveCompatibilityPairs(t *testing.T) {
+	covered := make(map[string]struct{}, len(allOTLPFiles))
+	for _, files := range allOTLPFiles {
+		path := files.canonical.Path()
+		if _, exists := covered[path]; exists {
+			t.Errorf("duplicate compatibility file pair for %q", path)
+		}
+		covered[path] = struct{}{}
+	}
+
+	const sourceRoot = "../../opentelemetry-proto/opentelemetry/proto"
+	sources := make(map[string]struct{})
+	err := filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".proto" {
+			return nil
+		}
+		relative, err := filepath.Rel(sourceRoot, path)
+		if err != nil {
+			return err
+		}
+		descriptorPath := filepath.ToSlash(filepath.Join(canonicalPathPrefix, relative))
+		sources[descriptorPath] = struct{}{}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("discover source proto files: %v", err)
+	}
+
+	for path := range sources {
+		if _, exists := covered[path]; !exists {
+			t.Errorf("source proto %q has no compatibility file pair", path)
+		}
+	}
+	for path := range covered {
+		if _, exists := sources[path]; !exists {
+			t.Errorf("compatibility file pair %q has no source proto", path)
+		}
+	}
+}
+
+func TestRepresentativeSignalAndProcessContextMessagesHaveCompatibleEncoding(t *testing.T) {
 	const schemaURL = "https://opentelemetry.io/schemas/1.40.0"
 	tests := []struct {
 		name      string
@@ -111,34 +162,223 @@ func TestCanonicalAndSlimMessagesHaveCompatibleEncoding(t *testing.T) {
 			&otlpcollectlogs.ExportLogsServiceRequest{ResourceLogs: []*otlplogs.ResourceLogs{{SchemaUrl: schemaURL}}},
 			&slimcollectlogs.ExportLogsServiceRequest{ResourceLogs: []*slimlogs.ResourceLogs{{SchemaUrl: schemaURL}}},
 		},
+		{
+			"profiles",
+			&otlpcollectprofiles.ExportProfilesServiceRequest{
+				ResourceProfiles: []*otlpprofiles.ResourceProfiles{{SchemaUrl: schemaURL}},
+				Dictionary:       &otlpprofiles.ProfilesDictionary{StringTable: []string{"", "cpu"}},
+			},
+			&slimcollectprofiles.ExportProfilesServiceRequest{
+				ResourceProfiles: []*slimprofiles.ResourceProfiles{{SchemaUrl: schemaURL}},
+				Dictionary:       &slimprofiles.ProfilesDictionary{StringTable: []string{"", "cpu"}},
+			},
+		},
+		{
+			"process context",
+			&otlpprocesscontext.ProcessContext{
+				Resource: &otlpresource.Resource{DroppedAttributesCount: 7},
+				Attributes: []*otlpcommon.KeyValue{{
+					Key: "key",
+					Value: &otlpcommon.AnyValue{
+						Value: &otlpcommon.AnyValue_StringValue{StringValue: "value"},
+					},
+				}},
+			},
+			&slimprocesscontext.ProcessContext{
+				Resource: &slimresource.Resource{DroppedAttributesCount: 7},
+				Attributes: []*slimcommon.KeyValue{{
+					Key: "key",
+					Value: &slimcommon.AnyValue{
+						Value: &slimcommon.AnyValue_StringValue{StringValue: "value"},
+					},
+				}},
+			},
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			canonicalBinary, err := proto.Marshal(test.canonical)
-			if err != nil {
-				t.Fatalf("marshal canonical binary protobuf: %v", err)
-			}
-			slimBinary, err := proto.Marshal(test.slim)
-			if err != nil {
-				t.Fatalf("marshal slim binary protobuf: %v", err)
-			}
-			if !bytes.Equal(slimBinary, canonicalBinary) {
-				t.Errorf("slim binary protobuf = %x, canonical = %x", slimBinary, canonicalBinary)
+			assertCompatibleEncoding(t, test.canonical, test.slim)
+		})
+	}
+}
+
+func TestEveryTopLevelMessageHasCompatibleEncoding(t *testing.T) {
+	const topLevelMessageCount = 57
+	tested := 0
+
+	// Generated fixtures exercise protobuf encoding, not signal-specific semantic
+	// constraints. New special message types may need tailored fixture values.
+	for _, files := range allOTLPFiles {
+		canonicalMessages := files.canonical.Messages()
+		slimMessages := files.slim.Messages()
+		if got, want := slimMessages.Len(), canonicalMessages.Len(); got != want {
+			t.Errorf("top-level message count for %s = %d, want %d", files.slim.Path(), got, want)
+		}
+
+		for i := 0; i < canonicalMessages.Len(); i++ {
+			canonicalDescriptor := canonicalMessages.Get(i)
+			slimDescriptor := slimMessages.ByName(canonicalDescriptor.Name())
+			if slimDescriptor == nil {
+				t.Errorf("slim descriptor for %s not found", canonicalDescriptor.FullName())
+				continue
 			}
 
-			canonicalJSON, err := protojson.Marshal(test.canonical)
-			if err != nil {
-				t.Fatalf("marshal canonical JSON protobuf: %v", err)
+			tested++
+			t.Run(string(canonicalDescriptor.FullName()), func(t *testing.T) {
+				assertCompatibleMessageShape(t, canonicalDescriptor, slimDescriptor)
+				canonical := newRepresentativeMessage(canonicalDescriptor)
+				slim := newRepresentativeMessage(slimDescriptor)
+				assertCompatibleEncoding(t, canonical, slim)
+			})
+		}
+	}
+
+	if tested != topLevelMessageCount {
+		t.Errorf("tested top-level messages = %d, want %d", tested, topLevelMessageCount)
+	}
+}
+
+func assertCompatibleMessageShape(t *testing.T, canonical, slim protoreflect.MessageDescriptor) {
+	t.Helper()
+
+	canonicalProto := protodesc.ToDescriptorProto(canonical)
+	slimProto := protodesc.ToDescriptorProto(slim)
+	canonicalizeSlimTypeNames(slimProto)
+	if !proto.Equal(slimProto, canonicalProto) {
+		t.Errorf(
+			"message descriptor mismatch for %s:\ncanonical:\n%s\nslim:\n%s",
+			canonical.FullName(),
+			prototext.Format(canonicalProto),
+			prototext.Format(slimProto),
+		)
+	}
+}
+
+func canonicalizeSlimTypeNames(message *descriptorpb.DescriptorProto) {
+	canonicalize := func(field *descriptorpb.FieldDescriptorProto) {
+		if field.TypeName != nil {
+			name := strings.Replace(field.GetTypeName(), "."+slimNamePrefix, "."+canonicalNamePrefix, 1)
+			field.TypeName = &name
+		}
+		if field.Extendee != nil {
+			name := strings.Replace(field.GetExtendee(), "."+slimNamePrefix, "."+canonicalNamePrefix, 1)
+			field.Extendee = &name
+		}
+	}
+	for _, field := range message.Field {
+		canonicalize(field)
+	}
+	for _, field := range message.Extension {
+		canonicalize(field)
+	}
+	for _, nested := range message.NestedType {
+		canonicalizeSlimTypeNames(nested)
+	}
+}
+
+func newRepresentativeMessage(descriptor protoreflect.MessageDescriptor) proto.Message {
+	message := dynamicpb.NewMessage(descriptor)
+	populateRepresentativeFields(message, 0)
+	return message
+}
+
+func populateRepresentativeFields(message protoreflect.Message, depth int) {
+	const maxDepth = 4
+	if depth >= maxDepth {
+		return
+	}
+
+	populatedOneofs := make(map[protoreflect.FullName]struct{})
+	fields := message.Descriptor().Fields()
+	for i := 0; i < fields.Len(); i++ {
+		field := fields.Get(i)
+		if oneof := field.ContainingOneof(); oneof != nil {
+			if _, exists := populatedOneofs[oneof.FullName()]; exists {
+				continue
 			}
-			slimJSON, err := protojson.Marshal(test.slim)
-			if err != nil {
-				t.Fatalf("marshal slim JSON protobuf: %v", err)
-			}
-			if !bytes.Equal(slimJSON, canonicalJSON) {
-				t.Errorf("slim JSON protobuf = %s, canonical = %s", slimJSON, canonicalJSON)
-			}
-		})
+			populatedOneofs[oneof.FullName()] = struct{}{}
+		}
+
+		switch {
+		case field.IsMap():
+			values := message.Mutable(field).Map()
+			key := representativeValue(field.MapKey(), depth+1).MapKey()
+			values.Set(key, representativeValue(field.MapValue(), depth+1))
+		case field.IsList():
+			values := message.Mutable(field).List()
+			values.Append(representativeValue(field, depth+1))
+		default:
+			message.Set(field, representativeValue(field, depth+1))
+		}
+	}
+}
+
+func representativeValue(field protoreflect.FieldDescriptor, depth int) protoreflect.Value {
+	switch field.Kind() {
+	case protoreflect.BoolKind:
+		return protoreflect.ValueOfBool(true)
+	case protoreflect.EnumKind:
+		values := field.Enum().Values()
+		index := min(1, values.Len()-1)
+		return protoreflect.ValueOfEnum(values.Get(index).Number())
+	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
+		return protoreflect.ValueOfInt32(-42)
+	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
+		return protoreflect.ValueOfInt64(-42)
+	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
+		return protoreflect.ValueOfUint32(42)
+	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
+		return protoreflect.ValueOfUint64(42)
+	case protoreflect.FloatKind:
+		return protoreflect.ValueOfFloat32(1.5)
+	case protoreflect.DoubleKind:
+		return protoreflect.ValueOfFloat64(1.5)
+	case protoreflect.StringKind:
+		return protoreflect.ValueOfString("value")
+	case protoreflect.BytesKind:
+		return protoreflect.ValueOfBytes([]byte{1, 2, 3})
+	case protoreflect.MessageKind, protoreflect.GroupKind:
+		message := dynamicpb.NewMessage(field.Message())
+		populateRepresentativeFields(message, depth)
+		return protoreflect.ValueOfMessage(message)
+	default:
+		panic("unsupported protobuf field kind: " + field.Kind().String())
+	}
+}
+
+func assertCompatibleEncoding(t *testing.T, canonical, slim proto.Message) {
+	t.Helper()
+
+	canonicalBinary, err := proto.MarshalOptions{Deterministic: true}.Marshal(canonical)
+	if err != nil {
+		t.Fatalf("marshal canonical binary protobuf: %v", err)
+	}
+	slimBinary, err := proto.MarshalOptions{Deterministic: true}.Marshal(slim)
+	if err != nil {
+		t.Fatalf("marshal slim binary protobuf: %v", err)
+	}
+	if !bytes.Equal(slimBinary, canonicalBinary) {
+		t.Errorf("slim binary protobuf = %x, canonical = %x", slimBinary, canonicalBinary)
+	}
+
+	canonicalJSON, err := protojson.Marshal(canonical)
+	if err != nil {
+		t.Fatalf("marshal canonical JSON protobuf: %v", err)
+	}
+	slimJSON, err := protojson.Marshal(slim)
+	if err != nil {
+		t.Fatalf("marshal slim JSON protobuf: %v", err)
+	}
+	var canonicalValue, slimValue any
+	if err := json.Unmarshal(canonicalJSON, &canonicalValue); err != nil {
+		t.Fatalf("unmarshal canonical JSON protobuf: %v", err)
+	}
+	if err := json.Unmarshal(slimJSON, &slimValue); err != nil {
+		t.Fatalf("unmarshal slim JSON protobuf: %v", err)
+	}
+	if !reflect.DeepEqual(slimValue, canonicalValue) {
+		t.Errorf("slim JSON protobuf = %s, canonical = %s", slimJSON, canonicalJSON)
 	}
 }
 
